@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Brand</title>
+  <!--
+    A simplified landing page that immediately presents a centered chat dialog.
+    The header displays “YHT.WORLD”, followed by a scrollable message area and
+    an input form.  All other content from the original site has been removed.
+    The server‑side API key is still loaded via config.php in chat‑api.php; no
+    secrets are exposed in this page.
+  -->
+  <style>
+    /* Center the chat panel on the page */
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      background: #f9fafb;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: sans-serif;
+    }
+    /* Chat panel container */
+    #chat-ai-panel {
+      /* Responsive dimensions: scale down on small screens while
+         respecting the original 800x600 maximum.  On mobile,
+         the panel will occupy up to 90% of the viewport size. */
+      width: 90vw;
+      max-width: 800px;
+      height: 90vh;
+      max-height: 600px;
+      background: #ffffff;
+      border: 1px solid #d1d5db;
+      border-radius: 0.5rem;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    /* Header */
+    #chat-ai-header {
+      background: #2A3B4C;
+      color: #ffffff;
+      padding: 12px;
+      font-weight: 600;
+      text-align: center;
+      flex: 0 0 auto;
+    }
+    /* Messages area */
+    #chat-ai-messages {
+      flex: 1 1 auto;
+      padding: 12px;
+      overflow-y: auto;
+      font-size: 14px;
+      background: #ffffff;
+    }
+    /* Input form */
+    #chat-ai-form {
+      flex: 0 0 auto;
+      display: flex;
+      border-top: 1px solid #e5e7eb;
+    }
+    #chat-ai-input {
+      flex: 1 1 auto;
+      padding: 10px;
+      font-size: 14px;
+      border: none;
+      outline: none;
+    }
+    #chat-ai-form button {
+      background: #2A3B4C;
+      color: #ffffff;
+      padding: 8px 14px;
+      font-size: 14px;
+      border: none;
+      cursor: pointer;
+    }
+    /* Bubble styles */
+    .chat-user-bubble {
+      display: inline-block;
+      background: #2A3B4C;
+      color: #ffffff;
+      padding: 6px 10px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      max-width: 90%;
+    }
+    .chat-assistant-bubble {
+      display: inline-block;
+      background: #f3f4f6;
+      color: #111827;
+      padding: 6px 10px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      max-width: 90%;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .chat-thinking-bubble {
+      display: inline-block;
+      background: #f3f4f6;
+      color: #4b5563;
+      padding: 6px 10px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      max-width: 90%;
+    }
+  </style>
+</head>
+<body>
+  <div id="chat-ai-panel">
+    <div id="chat-ai-header">MY Brand</div>
+    <div id="chat-ai-messages"></div>
+    <form id="chat-ai-form">
+      <input id="chat-ai-input" type="text" placeholder="欢迎在这里输入您的内容" required />
+      <button type="submit">发送Send</button>
+    </form>
+  </div>
+
+  <script>
+  (function(){
+    var form     = document.getElementById('chat-ai-form');
+    var input    = document.getElementById('chat-ai-input');
+    var messages = document.getElementById('chat-ai-messages');
+
+    /**
+     * Type text letter‑by‑letter into an element, with a blinking cursor.
+     * Long messages insert multiple characters per frame to speed up.
+     */
+    async function typewriter(el, fullText, speed){
+      speed = speed || 12;
+      return new Promise(function(resolve){
+        var i = 0;
+        var cursor = document.createElement('span');
+        cursor.style.display = 'inline-block';
+        cursor.style.borderRight = '2px solid #888';
+        cursor.style.marginLeft = '1px';
+        el.appendChild(cursor);
+        function tick(){
+          var step;
+          if(fullText.length > 1200) step = 3;
+          else if(fullText.length > 300) step = 2;
+          else step = 1;
+          var slice = fullText.slice(i, i + step);
+          el.insertBefore(document.createTextNode(slice), cursor);
+          i += step;
+          messages.scrollTop = messages.scrollHeight;
+          if(i < fullText.length){
+            setTimeout(tick, speed);
+          } else {
+            cursor.remove();
+            resolve();
+          }
+        }
+        if(fullText && fullText.length) tick(); else { cursor.remove(); resolve(); }
+      });
+    }
+
+    // Maintain conversation context across turns.  Each entry is an object
+    // with a `role` ("user" or "assistant") and `content` (the message).
+    // This array will be sent with each request so the backend can see the
+    // full conversation and respond appropriately to follow‑up questions.
+    var conversation = [];
+    var sessionId    = null;
+
+    form.addEventListener('submit', async function(e){
+      e.preventDefault();
+      var txt = (input.value || '').trim();
+      if(!txt) return;
+
+      // Push the user's message into the conversation history.
+      conversation.push({ role: 'user', content: txt });
+
+      // Display user message
+      var userWrap   = document.createElement('div');
+      var userBubble = document.createElement('div');
+      userBubble.className = 'chat-user-bubble';
+      userBubble.textContent = txt;
+      userWrap.appendChild(userBubble);
+      messages.appendChild(userWrap);
+      messages.scrollTop = messages.scrollHeight;
+      input.value = '';
+
+      // Show thinking indicator
+      var thinkWrap   = document.createElement('div');
+      var thinkBubble = document.createElement('div');
+      thinkBubble.className = 'chat-thinking-bubble';
+      thinkBubble.textContent = 'Thinking…';
+      thinkWrap.appendChild(thinkBubble);
+      messages.appendChild(thinkWrap);
+      messages.scrollTop = messages.scrollHeight;
+
+      try {
+        // Construct request payload: include conversation history and session_id
+        var payload = { messages: conversation };
+        if (sessionId) payload.session_id = sessionId;
+        var resp = await fetch('chat-api.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        var data = await resp.json().catch(function(){ return {}; });
+        thinkWrap.remove();
+        var reply = (data && data.reply) ? data.reply : 'Sorry, no response.';
+        // If a session ID is returned, store it so logs group the convo.
+        if (data && data.session_id) {
+          sessionId = data.session_id;
+        }
+        // Push assistant's reply into conversation history.
+        conversation.push({ role: 'assistant', content: reply });
+        var botWrap   = document.createElement('div');
+        var botBubble = document.createElement('div');
+        botBubble.className = 'chat-assistant-bubble';
+        botWrap.appendChild(botBubble);
+        messages.appendChild(botWrap);
+        messages.scrollTop = messages.scrollHeight;
+        // Escape &, < and > to prevent injection of HTML/JS in bot responses.
+        var safeReply = String(reply)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        await typewriter(botBubble, safeReply, 12);
+      } catch(err) {
+        thinkWrap.remove();
+        var errWrap   = document.createElement('div');
+        var errBubble = document.createElement('div');
+        errBubble.className = 'chat-assistant-bubble';
+        errBubble.style.background = '#fee2e2';
+        errBubble.style.color     = '#b91c1c';
+        errBubble.textContent = 'Network error. Please try again.';
+        errWrap.appendChild(errBubble);
+        messages.appendChild(errWrap);
+        messages.scrollTop = messages.scrollHeight;
+      }
+    });
+  })();
+  </script>
+</body>
+</html>
